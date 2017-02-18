@@ -231,3 +231,18 @@ check_cmdline
 echo
 info "== Core-specific setings  =="
 check_core
+
+
+echo
+echo
+echo "******************************************************************"
+echo "* WARNING!"
+echo "******************************************************************"
+echo "* Please use the results of this tool with caution: correctly"
+echo "* configure a PREEMPT_RT system is a difficult task. It requires"
+echo "* to check the effects of every single step in the configuration."
+echo "******************************************************************"
+echo "* A successful result of this tool DOES NOT mean that your Linux"
+echo "* system is correctly configured for real-time applications."
+echo "******************************************************************"
+echo
