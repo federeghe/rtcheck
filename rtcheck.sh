@@ -29,18 +29,85 @@ error ()
 	echo -e "\e[91m[ERR]\e[0m $1"
 }
 
+check_config_enabled() {
+	if [ -z "$(echo $CONFIGURATION | grep $1=y)" ]; then
+		error "$1 not enabled"
+	else
+		success "$1 enabled"
+	fi
+}
+
+check_config() {
+
+	BOOT_CONFIG_FILE=/boot/config-`uname -r`
+	BOOT_CONFIG_FILE_2=/boot/config
+	PROC_CONFIG_FILE=/proc/config.gz
+	CONFIGURATION=""
+
+	if [ -e $BOOT_CONFIG_FILE ]; then
+		CONFIGURATION=`cat $BOOT_CONFIG_FILE`
+	fi
+
+	if [ -e $BOOT_CONFIG_FILE_2 ]; then
+		CONFIGURATION=`cat $BOOT_CONFIG_FILE_2`
+	fi
+
+	if [ -e $PROC_CONFIG_FILE ]; then
+		CONFIGURATION=`zcat $PROC_CONFIG_FILE`
+	fi
+
+	if [ -z "$CONFIGURATION" ]; then
+		warning "Unable to check the kernel configuration. Please try \`modprobe configs\`"
+		return
+	fi
+
+	check_config_enabled "CONFIG_PREEMPT_RT"
+	check_config_enabled "CONFIG_RCU_NOCB_CPU"
+	check_config_enabled "CONFIG_RCU_NOCB_CPU_ALL"
+	check_config_enabled "CONFIG_NO_HZ_FULL"
+	check_config_enabled "CONFIG_HOTPLUG_CPU"
+	check_config_enabled "CONFIG_IRQ_FORCED_THREADING"
+	
+}
+
 check_rt()
 {
 	PREEMPTION=`uname -v | grep "PREEMPT RT"`
 	if [ -z $PREEMPTION ]; then
-		error "PREEMPT RT not present or not enabled."
+		error "PREEMPT RT not present or not enabled"
 	else
 		success "PREEMPT RT enabled"
 	fi
 	
 	CG_MOUNTED=`mount | grep cgroup | wc -l`
 	if [ $CG_MOUNTED -gt 0 ]; then
-		warning "Mounted CGroups. They may cause unexpected delays."
+		warning "Mounted CGroups. They may cause unexpected delays"
+	fi
+
+
+	if [ -e /proc/sys/kernel/watchdog ]; then
+		if [ `cat /proc/sys/kernel/watchdog` -gt 0 ]; then
+			error "Watchdog enabled"
+		else
+			success "Watchdog disabled"
+		fi
+	fi
+
+	if [ -e /sys/bus/workqueue/devices/writeback/numa ]; then
+		if [ `cat /sys/bus/workqueue/devices/writeback/numa` -gt 0 ]; then
+			error  "NUMA workqueue writeback enabled"
+		else
+			warning "NUMA workqueue writeback enabled"
+		fi 
+	fi
+
+	if [ -e /sys/bus/workqueue/devices/writeback/cpumask ]; then
+		WRITEBACK_CPU=`cat /sys/bus/workqueue/devices/writeback/cpumask`
+		if ((("0x$WRITEBACK_CPU" & $RT_CPU ))); then
+			error "CPU is in the workqueue writeback cpumask"
+		else
+			success "CPU out of workqueue writeback cpumask"
+		fi
 	fi
 
 }
@@ -92,32 +159,6 @@ general_info()
 	info "VM Stat interval: $VM_STAT_INTERVAL"
 	if [ $VM_STAT_INTERVAL -le 10 ]; then
 		warning "VM Stat interval seems too low ($VM_STAT_INTERVAL)"
-	fi
-
-
-	if [ -e /proc/sys/kernel/watchdog ]; then
-		if [ `cat /proc/sys/kernel/watchdog` -gt 0 ]; then
-			error "Watchdog enabled"
-		else
-			success "Watchdog disabled"
-		fi
-	fi
-
-	if [ -e /sys/bus/workqueue/devices/writeback/numa ]; then
-		if [ `cat /sys/bus/workqueue/devices/writeback/numa` -gt 0 ]; then
-			error  "NUMA workqueue writeback enabled"
-		else
-			warning "NUMA workqueue writeback enabled"
-		fi 
-	fi
-
-	if [ -e /sys/bus/workqueue/devices/writeback/cpumask ]; then
-		WRITEBACK_CPU=`cat /sys/bus/workqueue/devices/writeback/cpumask`
-		if ((("0x$WRITEBACK_CPU" & $RT_CPU ))); then
-			error "CPU is in the workqueue writeback cpumask"
-		else
-			success "CPU out of workqueue writeback cpumask"
-		fi
 	fi
 
 }
@@ -174,6 +215,10 @@ check_core()
 echo
 info "== General system information =="
 general_info
+
+echo
+info "== Kernel configuration =="
+check_config
 
 echo
 info "== General Real-Time checks =="
